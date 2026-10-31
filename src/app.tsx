@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { readNight } from './digest/reader.js';
 import { loadConfig, type RigConfig } from './config.js';
 import { lane } from './lane.js';
 import { readStatus } from './status.js';
@@ -11,6 +12,14 @@ export function createApp(config: RigConfig = loadConfig()) {
   const app = new Hono();
 
   app.get('/health', (c) => c.json({ ok: true, lane: lane().id }));
+
+  // The same Night the page renders (ADR 0001): rows as readNight returns them, never reshaped.
+  app.get('/api/digest/:night', (c) => {
+    const night = c.req.param('night');
+    const data = readNight(config.runsDir, night);
+    if (!data) return c.json({ error: 'no run log', night }, 404);
+    return c.json(data);
+  });
 
   app.get('/', (c) =>
     c.html(
