@@ -1,0 +1,60 @@
+# Plan morning-digest § 3 and § 4. Builds the preview from source and deploys it to GitHub Pages.
+# The HTML only ever exists inside this run, never in the repo (ADR 0003). Run it again with an
+# empty marker to upload the clean copy over the same link.
+name: preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      night:
+        description: Night to preview (runs/<night>.jsonl)
+        default: '2026-10-28'
+      marker:
+        description: LANE_MARKER for the banner; leave empty for "no marker set"
+        default: ''
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm install --no-fund --no-audit
+      - name: Write .env
+        env:
+          MARKER: ${{ inputs.marker }}
+        run: printf 'LANE_ID=lane-07\nLANE_MARKER=%s\nPORT=8787\n' "$MARKER" > .env
+      - name: Save the page as one HTML file
+        env:
+          NIGHT: ${{ inputs.night }}
+        run: |
+          npm start &
+          for i in $(seq 30); do curl -sf http://localhost:8787/health && break; sleep 1; done
+          mkdir -p _site
+          curl -sf "http://localhost:8787/digest/$NIGHT" -o _site/index.html
+          grep -o '<span class="marker">[^<]*</span>' _site/index.html
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
